@@ -13,49 +13,83 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import sys
+import os
+import codecs
+from setuptools import setup, find_packages
 
 
-setup_args = {
-    "name": "m2secret",
-    "version": "0.2",
-    "platforms": ["any"],
-    "description": "Encryption and decryption module and CLI utility",
-    "long_description": """\
-m2secret is a simple encryption and decryption module and CLI utility built
-with the M2Crypto library to make it easy to secure strings and files from
-prying eyes.
+version = '1.0'
 
-By default it will use 256-bit AES (Rijndael) symmetric-key cryptography in
-CBC mode. Key material is derived from submitted password using the PBKDF2
-algorithm.""",
-    "author": "Heikki Toivonen",
-    "author_email": "My first name at heikkitoivonen.net",
-    "url": 'http://www.heikkitoivonen.net/m2secret',
-    "license": "Apache Software License",
-    "py_modules": ["m2secret"],
-    "classifiers": [
-        "Development Status :: 4 - Beta",
-        "Intended Audience :: Developers",
-        "Intended Audience :: End Users/Desktop",
-        "License :: OSI Approved :: Apache Software License",
-        "Operating System :: OS Independent",
-        "Programming Language :: Python",
-        "Topic :: Security :: Cryptography",
-        "Topic :: Software Development :: Libraries :: Python Modules",
-    ],
-}
 
-try:
-    from setuptools import setup
-    
-    setup_args["zip_safe"] = True
-    setup_args["entry_points"] = {
-        "console_scripts": [
-            "m2secret = m2secret:main",
+if sys.argv[-1] == 'publish':
+    os.system('python setup.py sdist upload')
+    os.system('python setup.py bdist_wheel upload')
+    print('You probably want to also tag the version now:')
+    print('  git tag -a %s -m "version %s"' % (version, version))
+    print('  git push --tags')
+    sys.exit()
+
+
+def read(*parts):
+    filename = os.path.join(os.path.dirname(__file__), *parts)
+    with codecs.open(filename, encoding='utf-8') as fp:
+        return fp.read()
+
+
+install_requires = [
+    'cryptography>=1.8.1',
+]
+
+
+test_requires = [
+    'pytest==3.0.7',
+    'pytest-flakes==1.5.0',
+    'pytest-pep8==1.0.6',
+    'pep8==1.4.6',
+    'mock==2.0.0',
+]
+
+
+setup(
+    name='m2secret',
+    version=version,
+    description='Encryption and decryption module and CLI utility.',
+    long_description=read('README.rst'),
+    author='Heikki Toivonen',
+    author_email='My first name at heikkitoivonen.net',
+    maintainer='Christopher Grebs',
+    maintainer_email='cg@webshox.org',
+    url='https://github.com/EnTeQuAk/m2secret',
+    license='Apache Software License',
+    packages=find_packages(),
+    install_requires=install_requires,
+    extras_require={
+        'tests': test_requires,
+    },
+    include_package_data=True,
+    entry_points={
+        'console_scripts': [
+            'm2secret = m2secret:main'
         ]
-    }
-    setup_args["install_requires"] = ["M2Crypto >= 0.18"]
-except ImportError:
-    from distutils.core import setup
-
-setup(**setup_args)
+    },
+    zip_safe=False,
+    classifiers=[
+        'Development Status :: 5 - Production/Stable',
+        'License :: OSI Approved :: Apache Software License',
+        'Operating System :: OS Independent',
+        'Intended Audience :: Developers',
+        'Intended Audience :: End Users/Desktop',
+        'Topic :: Software Development :: Libraries :: Python Modules',
+        'Topic :: Security :: Cryptography',
+        'Programming Language :: Python',
+        'Programming Language :: Python :: 2',
+        'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.5',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: Implementation :: PyPy',
+        'Programming Language :: Python :: Implementation :: CPython',
+        'Framework :: Django',
+    ]
+)
