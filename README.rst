@@ -12,6 +12,4 @@ By default it will use 256-bit AES (Rijndael) symmetric-key cryptography in
 CBC mode. Key material is derived from submitted password using the PBKDF2
 algorithm.
 
-m2secret originally from:
-
-http://www.heikkitoivonen.net/m2secret/
+m2secret originally developed by Heikki Toivonen: http://www.heikkitoivonen.net/m2secret/
