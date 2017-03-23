@@ -1,3 +1,9 @@
+.. image:: https://badge.fury.io/py/m2secret-py3.svg
+   :target: https://pypi.python.org/pypi/m2secret-py3
+
+.. image:: https://travis-ci.org/EnTeQuAk/m2secret.svg?branch=master
+   :target: https://travis-ci.org/EnTeQuAk/m2secret
+
 m2secret is a simple encryption and decryption module and CLI utility built
 with the M2Crypto library to make it easy to secure strings and files from
 prying eyes.

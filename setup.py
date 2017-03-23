@@ -44,7 +44,7 @@ install_requires = [
 
 test_requires = [
     'pytest==3.0.7',
-    'pytest-flakes==1.5.0',
+    'pytest-flakes==1.0.1',
     'pytest-pep8==1.0.6',
     'pep8==1.4.6',
     'mock==2.0.0',
@@ -52,9 +52,9 @@ test_requires = [
 
 
 setup(
-    name='m2secret',
+    name='m2secret-py3',
     version=version,
-    description='Encryption and decryption module and CLI utility.',
+    description='Encryption and decryption module and CLI utility. Python 2 and 3 compatible.',
     long_description=read('README.rst'),
     author='Heikki Toivonen',
     author_email='My first name at heikkitoivonen.net',
