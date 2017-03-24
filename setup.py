@@ -19,7 +19,7 @@ import codecs
 from setuptools import setup, find_packages
 
 
-version = '1.2'
+version = '1.3'
 
 
 if sys.argv[-1] == 'publish':
