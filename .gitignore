@@ -1,3 +1,11 @@
-.cache
-.tox
-*.egg-info
+.cache/
+.tox/
+*.egg-info/
+__pycache__/
+build/
+dist/
+htmlcov/
+.coverage
+*.egg
+.eggs/
+*.py[co]
