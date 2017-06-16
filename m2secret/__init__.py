@@ -29,15 +29,39 @@ import os
 import sys
 import hmac
 import string
-import cStringIO
-from hashlib import sha256
+
+import hashlib
 from binascii import hexlify, unhexlify
 
-from M2Crypto import EVP
+import six
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives.ciphers import algorithms, modes
+from cryptography.hazmat.primitives.ciphers.base import Cipher
+
+CRYPTO_BACKEND = default_backend()
 
 
-version = '0.2'
-version_info = tuple([int(x) for x in version.split('.')])
+# partially copied from Django
+def force_bytes(s, encoding='utf-8', errors='strict'):
+    if isinstance(s, bytes):
+        if encoding == 'utf-8':
+            return s
+        else:
+            return s.decode('utf-8', errors).encode(encoding, errors)
+    if not isinstance(s, six.string_types):
+        try:
+            if six.PY3:
+                return six.text_type(s).encode(encoding)
+            else:
+                return bytes(s)
+        except UnicodeEncodeError:
+            if isinstance(s, Exception):
+                return b' '.join(force_bytes(arg, encoding, strings_only, errors)
+                                 for arg in s)
+            return six.text_type(s).encode(encoding, errors)
+    else:
+        return s.encode(encoding, errors)
 
 
 class SecretError(Exception):
@@ -81,26 +105,25 @@ class Secret:
               encryption will not be of much help.
     """
     def __init__(self, iv=None, salt=None, ciphertext=None,
-                 iterations=1000, algorithm='aes_256_cbc'):
+                 iterations=1000):
         """
         Construct a Secret object.
 
         ciphertext, iv and salt can be None when originally created. The Secret
         is then considered to not hold any data. To set new data, call
-        encrypt().
+        encrypt(). It'll use AES 256 CBC as the algorithm.
 
         @param iv: The IV, 256 bits (byte string 32 long)
         @param salt: The salt, 256 bits (byte string 32 long)
         @param ciphertext: The secret to hold
         @param iterations: The number of iterations to use with PBKDF2,
                            recommend 1000.
-        @param param: The algorithm to use, recommend aes_256_cbc.
+        @param param: The algorithm to use, recommend .
         """
         self.ciphertext = ciphertext
-        self.iv = iv
-        self.salt = salt
+        self.iv = iv or os.urandom(32)
+        self.salt = salt or os.urandom(32)
         self.iterations = iterations
-        self.algorithm = algorithm
 
     def decrypt(self, password):
         """
@@ -121,32 +144,33 @@ class Secret:
             pass
 
         # the crypto algorithms are unicode unfriendly
-        if isinstance(password, unicode):
-            password = password.encode('utf8')
+        password = force_bytes(password)
 
         # derive 256 bit key using the pbkdf2 standard
-        key = EVP.pbkdf2(password, self.salt, iter=self.iterations, keylen=32)
+        key = hashlib.pbkdf2_hmac(
+            'sha1', password, self.salt, self.iterations, 32)
 
         # Derive encryption key and HMAC key from it
         # See Practical Cryptography section 8.4.1.
-        hmacKey = sha256(key + 'MAC').digest()
-        encKey = sha256(key + 'encrypt').digest()
+        hmacKey = hashlib.sha256(key + b'MAC').digest()
+        encKey = hashlib.sha256(key + b'encrypt').digest()
         del key
 
         # decrypt
-        try:
-            ret = decrypt(self.ciphertext, encKey, self.iv, self.algorithm)
-        except EVP.EVPError, e:
-            raise DecryptionError(str(e))
-        finally:
-            del encKey
+        ret = decrypt(self.ciphertext, encKey, self.iv)
+        del encKey
 
         # Check MAC
         mac = ret[-64:]
         ret = ret[:-64]
         try:
-            if hmac.new(hmacKey, ret + self.iv + self.salt,
-                        sha256).hexdigest() != mac:
+            invalid_mac = force_bytes(hmac.new(
+                hmacKey,
+                ret + self.iv + self.salt,
+                hashlib.sha256
+            ).hexdigest()) != mac
+
+            if invalid_mac:
                 raise DecryptionError('HMAC does not match')
         finally:
             del hmacKey
@@ -172,19 +196,20 @@ class Secret:
             pass
 
         # the crypto algorithms are unicode unfriendly
-        if isinstance(password, unicode):
-            password = password.encode('utf8')
+        password = force_bytes(password)
+        cleartext = force_bytes(cleartext)
 
         # get 256 bit random encryption salt
         self.salt = os.urandom(32)
 
         # derive 256 bit encryption key using the pbkdf2 standard
-        key = EVP.pbkdf2(password, self.salt, iter=self.iterations, keylen=32)
+        key = hashlib.pbkdf2_hmac(
+            'sha1', password, self.salt, self.iterations, 32)
 
         # Derive encryption key and HMAC key from it
         # See Practical Cryptography section 8.4.1.
-        hmacKey = sha256(key + 'MAC').digest()
-        encKey = sha256(key + 'encrypt').digest()
+        hmacKey = hashlib.sha256(key + b'MAC').digest()
+        encKey = hashlib.sha256(key + b'encrypt').digest()
         del key
 
         # get 256 bit random iv
@@ -195,16 +220,16 @@ class Secret:
         # us encrypt empty cleartext (otherwise we'd need to pad with some
         # string to encrypt). Practical Cryptography by Schneier & Ferguson
         # also recommends doing it in this order in section 8.2.
-        mac = hmac.new(hmacKey, cleartext + self.iv + self.salt,
-                       sha256).hexdigest()
+        mac = force_bytes(hmac.new(
+            hmacKey,
+            cleartext + self.iv + self.salt,
+            hashlib.sha256
+        ).hexdigest())
+
         del hmacKey
 
         # encrypt
-        try:
-            self.ciphertext = encrypt(cleartext + mac, encKey, self.iv,
-                                      self.algorithm)
-        except EVP.EVPError, e:
-            raise EncryptionError(str(e))
+        self.ciphertext = encrypt(cleartext + mac, encKey, self.iv)
 
         return self.ciphertext
 
@@ -217,7 +242,7 @@ class Secret:
         if not self.ciphertext or not self.iv or not self.salt:
             raise NoDataError
 
-        serialized = "%s|%s|%s" % (hexlify(self.iv), hexlify(self.salt),
+        serialized = b'%s|%s|%s' % (hexlify(self.iv), hexlify(self.salt),
                                     hexlify(self.ciphertext))
         if serialize is not None:
             serialize(serialized)
@@ -233,7 +258,7 @@ class Secret:
         except TypeError:
             serialized = deserialize
 
-        iv, salt, ciphertext = serialized.split('|')
+        iv, salt, ciphertext = force_bytes(serialized).split(b'|')
         self.iv, self.salt, self.ciphertext = unhexlify(iv), unhexlify(salt), unhexlify(ciphertext)
 
     def clear(self):
@@ -251,44 +276,38 @@ class Secret:
             pass
 
 
-def _cipherFilter(cipher, inf, outf):
-    # decrypt/encrypt helper
-    while 1:
-        buf = inf.read()
-        if not buf:
-            break
-        outf.write(cipher.update(buf))
-    outf.write(cipher.final())
-    return outf.getvalue()
-
-
-def decrypt(ciphertext, key, iv, alg):
+def decrypt(ciphertext, key, iv):
     """
     Decrypt ciphertext
     """
     assert len(key) == len(iv) == 32
-    cipher = EVP.Cipher(alg=alg, key=key, iv=iv, op=0)
+
+    cipher = Cipher(
+        algorithms.AES(key), modes.CBC(iv[:16]), CRYPTO_BACKEND).decryptor()
     del key
-    pbuf = cStringIO.StringIO()
-    cbuf = cStringIO.StringIO(ciphertext)
-    plaintext = _cipherFilter(cipher, cbuf, pbuf)
-    pbuf.close()
-    cbuf.close()
+    plaintext_padded = cipher.update(ciphertext) + cipher.finalize()
+
+    unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+    plaintext = unpadder.update(plaintext_padded) + unpadder.finalize()
+
     return plaintext
 
 
-def encrypt(plaintext, key, iv, alg):
+def encrypt(plaintext, key, iv):
     """
     Encrypt plaintext
     """
     assert len(key) == len(iv) == 32
-    cipher = EVP.Cipher(alg=alg, key=key, iv=iv, op=1)
+
+    cipher = Cipher(
+        algorithms.AES(key), modes.CBC(iv[:16]), CRYPTO_BACKEND).encryptor()
     del key
-    pbuf = cStringIO.StringIO(plaintext)
-    cbuf = cStringIO.StringIO()
-    ciphertext = _cipherFilter(cipher, pbuf, cbuf)
-    pbuf.close()
-    cbuf.close()
+
+    padder = padding.PKCS7(algorithms.AES.block_size).padder()
+    padded_data = padder.update(plaintext) + padder.finalize()
+
+    ciphertext = cipher.update(padded_data) + cipher.finalize()
+
     assert ciphertext
     return ciphertext
 
